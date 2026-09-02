@@ -5869,7 +5869,7 @@ function updatecheck()
             version = 352,
             name = 'Winter Outpost',
         },
-        [2606294912] = {
+        [85776757589518] = {
             version = 473,
             name = 'Desert Temple',
         },
