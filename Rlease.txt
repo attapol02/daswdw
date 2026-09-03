@@ -1,0 +1,512 @@
+-- [[ Dungeon Quest Reborn Auto Farm ]]
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
+local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+
+while not game:IsLoaded() do
+  task.wait(0.1)
+end
+
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+
+local gamer = {CollectionService, PathfindingService, table.insert, table.remove} 
+local sDebug = false
+
+local function report(...)
+  warn(...)
+end
+
+local getPlayerInvy = function(player)
+  if ReplicatedStorage:FindFirstChild("remotes") and ReplicatedStorage.remotes:FindFirstChild("reloadInvy") then
+    return ReplicatedStorage.remotes.reloadInvy:InvokeServer()
+  end
+  return {}
+end
+
+local function generateRandomString()
+  local chars = {"q","w","e","r","t","y","u","i","o","p","a","s","d","f","g","h","j","k","l","z","x","c","v","b","n","m","1","2","3","4","5","6","7","8","9","0","X","A","B","V","R","I","O","P","L"}
+  local str = ""
+  for i = 1, 16 do
+    str = str .. chars[math.random(1, #chars)]
+  end
+  return str
+end
+local regionPartName = generateRandomString()
+
+local function waitForExist(obj, objName, waitTime)
+  if waitTime ~= nil then
+    local timer = 0
+    while not obj:FindFirstChild(objName) and waitTime > timer do
+      task.wait(0.1)
+      timer = timer + 0.1
+    end
+    return obj:FindFirstChild(objName)
+  else
+    while not obj:FindFirstChild(objName) do
+      task.wait()
+    end
+    return obj:FindFirstChild(objName)
+  end
+end
+
+while not ReplicatedStorage:FindFirstChild("remotes") do
+  task.wait(0.1)
+end
+
+function ScriptDebug(a)
+  warn(a)
+end
+
+local plrs = Players
+local me = LocalPlayer
+
+local stuffTransparency = 1
+local abilityRange = 70
+local mobRange = 4
+local bossRange = 6
+local extremelyFast = _G.extremelyFast
+local walkspeed = 33
+local insert = gamer[3]
+local remove = gamer[4]
+
+local bossRaid = false
+local normalDungeon = true
+local waveDefense = false
+local eggEvent = false
+if sDebug then
+  stuffTransparency = .5
+end
+
+local gameOver = false
+local bossPresent = false
+_G.auto_attack = true
+_G.smallTeleportVal = _G.smallTeleportVal or 100
+
+local instakillTable = {
+  ["Sand Peasant"] = true,
+  ["Sand Giant"] = true,
+  ["Frost Minion"] = true,
+  ["Frost Wizard"] = true,
+  ["Pirate Rifleman"] = true,
+  ["Pirate Savage"] = true,
+  ["Elementalist"] = true,
+  ["King's Guard"] = true,
+  ["Dark Mage"] = true,
+  ["Demon Warrior"] = true,
+  ["Samurai Swordsman"] = true,
+  ["Bodyguard"] = true,
+  ["Burly Enforcer"] = true,
+  ["Raider"] = true,
+  ["Harpoon Gunner"] = true,
+  ["Cannon Crab"] = true,
+  ["Spinner Bot"] = true,
+  ["Fighter Bot"] = true,
+  ["Cog Shooter"] = true,
+  ["Hammer Bot"] = true,
+  ["Hologram Assassin"] = true,
+  ["Hologram Warrior"] = true,
+  ["Chicken Mage"] = true,
+  ["Chicken Brawler"] = true,
+}
+
+pcall(function()
+  local VirtualUser = game:GetService("VirtualUser")
+  LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+  end)
+end)
+
+function AIMovementInLobby()
+  local clock = 0
+  local doneMoving = false
+  _G.ai_done = false
+  local zombie = LocalPlayer.Character
+  if not zombie or not zombie:FindFirstChild("Humanoid") or not zombie:FindFirstChild("HumanoidRootPart") then
+    _G.ai_done = true
+    return
+  end
+  local Zombiehumanoid = zombie.Humanoid
+  task.spawn(function()
+    local randomWayPoints = {
+      { Vector3.new(29.444, 10.68, 1005.28) },
+      { Vector3.new(120.15, 5.05, 1005.26) },
+      { Vector3.new(145.12, 4.79, 1028.20) },
+      { Vector3.new(50.00, 5.40, 1025.59), Vector3.new(12.74, 4.94, 1046.24) },
+      { Vector3.new(28.11, 4.82, 1041.24) }
+    }
+
+    local selected = randomWayPoints[math.random(1, #randomWayPoints)]
+    for i, v in pairs(selected) do
+      if _G.ai_done then break end
+      local path = PathfindingService:CreatePath()
+      pcall(function()
+        path:ComputeAsync(zombie.HumanoidRootPart.Position, v)
+        local waypoints = path:GetWaypoints()
+        for _, waypoint in pairs(waypoints) do
+          if _G.ai_done then break end
+          Zombiehumanoid:MoveTo(waypoint.Position)
+          Zombiehumanoid.MoveToFinished:Wait()
+        end
+      end)
+    end
+    doneMoving = true
+  end)
+  local maxWait = _G.maxWaitTimeInLobby or 3
+  while not(doneMoving or clock > maxWait) do
+    clock = clock + 0.1
+    task.wait(0.1)
+  end
+  _G.ai_done = true
+end
+
+function autoupgrade()
+  if _G.auto_stat_upgrade and _G.stat then
+    if LocalPlayer:FindFirstChild("skillPoints") and LocalPlayer.skillPoints.Value > 0 then
+      while LocalPlayer.skillPoints.Value > 0 do
+        ReplicatedStorage.remotes.spendSkillPoint:FireServer(_G.stat)
+        task.wait()
+      end
+    end
+  end
+end
+
+function autochoosedungeon()
+  if _G.auto_choose_dungeon_and_difficulty then
+    local ls = LocalPlayer:WaitForChild("leaderstats", 5)
+    local lvlObj = ls and ls:WaitForChild("Level", 5)
+    local lvl = lvlObj and lvlObj.Value or 1
+    if lvl <= 5 then
+      _G.dungeon = "Desert Temple" _G.difficulty = "Easy"
+    elseif lvl <= 11 then
+      _G.dungeon = "Desert Temple" _G.difficulty = "Medium"
+    elseif lvl <= 19 then
+      _G.dungeon = "Desert Temple" _G.difficulty = "Hard"
+    elseif lvl <= 26 then
+      _G.dungeon = "Desert Temple" _G.difficulty = "Insane"
+    elseif lvl <= 32 then
+      _G.dungeon = "Desert Temple" _G.difficulty = "Nightmare"
+    elseif lvl <= 39 then
+      _G.dungeon = "Winter Outpost" _G.difficulty = "Easy"
+    elseif lvl <= 44 then
+      _G.dungeon = "Winter Outpost" _G.difficulty = "Medium"
+    elseif lvl <= 49 then
+      _G.dungeon = "Winter Outpost" _G.difficulty = "Hard"
+    elseif lvl <= 54 then
+      _G.dungeon = "Winter Outpost" _G.difficulty = "Insane"
+    elseif lvl <= 59 then
+      _G.dungeon = "Winter Outpost" _G.difficulty = "Nightmare"
+    elseif lvl <= 64 then
+      _G.dungeon = "Pirate Island" _G.difficulty = "Insane"
+    elseif lvl <= 69 then
+      _G.dungeon = "Pirate Island" _G.difficulty = "Nightmare"
+    elseif lvl <= 74 then
+      _G.dungeon = "King's Castle" _G.difficulty = "Insane"
+    elseif lvl <= 79 then
+      _G.dungeon = "King's Castle" _G.difficulty = "Nightmare"
+    elseif lvl <= 84 then
+      _G.dungeon = "The Underworld" _G.difficulty = "Insane"
+    elseif lvl <= 89 then
+      _G.dungeon = "The Underworld" _G.difficulty = "Nightmare"
+    elseif lvl <= 94 then
+      _G.dungeon = "Samurai Palace" _G.difficulty = "Insane"
+    elseif lvl <= 99 then
+      _G.dungeon = "Samurai Palace" _G.difficulty = "Nightmare"
+    elseif lvl <= 104 then
+      _G.dungeon = "The Canals" _G.difficulty = "Insane"
+    elseif lvl <= 109 then
+      _G.dungeon = "The Canals" _G.difficulty = "Nightmare"
+    elseif lvl <= 114 then
+      _G.dungeon = "Ghastly Harbor" _G.difficulty = "Insane"
+    elseif lvl <= 119 then
+      _G.dungeon = "Ghastly Harbor" _G.difficulty = "Nightmare"
+    elseif lvl <= 124 then
+      _G.dungeon = "Steampunk Sewers" _G.difficulty = "Insane"
+    elseif lvl <= 139 then
+      _G.dungeon = "Steampunk Sewers" _G.difficulty = "Nightmare"
+    elseif lvl <= 145 then
+      _G.dungeon = "Orbital Outpost" _G.difficulty = "Insane"
+    elseif lvl <= 149 then
+      _G.dungeon = "Orbital Outpost" _G.difficulty = "Nightmare"
+    elseif lvl <= 154 then
+      _G.dungeon = "Volcanic Chambers" _G.difficulty = "Insane"
+    else
+      _G.dungeon = "Volcanic Chambers" _G.difficulty = "Nightmare"
+    end
+  end
+end
+
+-- ==================== ตรวจสอบว่าเป็น LOBBY หรือ DUNGEON ====================
+local isLobby = (game.PlaceId == 77649408247578) or (game.PlaceId == 2414851778) or (game.PlaceId == 3220968688) 
+  or workspace:FindFirstChild("games") or workspace:FindFirstChild("bossLobbies") or workspace:FindFirstChild("dailyRewardTouchPart")
+
+if isLobby then
+  warn('[Dungeon Quest Reborn] Detected Lobby!')
+  while not workspace:FindFirstChild(LocalPlayer.Name) do
+    task.wait(0.1)
+    if ReplicatedStorage.remotes:FindFirstChild("loadPlayerCharacter") then
+      ReplicatedStorage.remotes.loadPlayerCharacter:FireServer()
+    end
+  end
+
+  task.spawn(function()
+    AIMovementInLobby()
+  end)
+
+  autochoosedungeon()
+  autoupgrade()
+
+  while not _G.ai_done do
+    task.wait(0.1)
+  end
+
+  if _G.auto_join_dungeon ~= false then
+    local dungeonTarget = _G.dungeon or "Desert Temple"
+    local diffTarget = _G.difficulty or "Insane"
+    local hardcoreMode = _G.hardcore or false
+
+    warn('[Dungeon Quest Reborn] Creating Lobby: ' .. tostring(dungeonTarget) .. ' [' .. tostring(diffTarget) .. ']')
+    if _G.boss_raid then
+      ReplicatedStorage.remotes.createBossLobby:InvokeServer(_G.boss_raid_tier or 1, true, 0)
+      task.wait(1)
+      ReplicatedStorage.remotes.startBossRaid:FireServer()
+    else
+      ReplicatedStorage.remotes.createLobby:InvokeServer(dungeonTarget, diffTarget, 0, hardcoreMode, true, false)
+      task.wait(1)
+      ReplicatedStorage.remotes.startDungeon:FireServer()
+    end
+  end
+
+  while task.wait(1) do end
+end
+
+-- ==================== ส่วนการทำงานในดันเจี้ยน (IN DUNGEON) ====================
+warn('[Dungeon Quest Reborn] Running in Dungeon!')
+
+while not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
+  task.wait(0.1)
+end
+
+-- ถ้ายังไม่ได้กดเริ่มดันเจี้ยน ให้เริ่มทันที
+task.spawn(function()
+  task.wait(1)
+  if workspace:FindFirstChild("start") then
+    pcall(function()
+      LocalPlayer.Character.HumanoidRootPart.CFrame = workspace.start.CFrame
+    end)
+  end
+  if ReplicatedStorage.remotes:FindFirstChild("changeStartValue") then
+    ReplicatedStorage.remotes.changeStartValue:FireServer()
+  end
+end)
+
+while not workspace:FindFirstChild("dungeon") and not workspace:FindFirstChild("tier") and not workspace:FindFirstChild("currentWave") do
+  task.wait(0.5)
+end
+
+local pathargs = {
+  ["AgentHeight"] = 5,
+  ["AgentRadius"] = 3,
+  ["AgentCanJump"] = true
+}
+local PathfindingService = gamer[2]
+local cs = gamer[1]
+local path = PathfindingService:CreatePath(pathargs)
+local waypoints = {}
+local currentWaypointIndex = 0
+local enemy = nil
+
+local function getPlayer()
+  local play = LocalPlayer
+  local chara = play and play.Character
+  local hum = chara and chara:FindFirstChild("Humanoid")
+  local root = chara and chara:FindFirstChild("HumanoidRootPart")
+  return play, chara, hum, root
+end
+
+local function getMag(v1, v2)
+  return (v1 - v2).magnitude
+end
+
+local function charLookAt(chr, target)
+  if chr and chr.PrimaryPart and target and target.Position then
+    local chrPos = chr.PrimaryPart.Position
+    local tPos = target.Position
+    chr:SetPrimaryPartCFrame(CFrame.new(Vector3.new(chrPos.X, chrPos.Y, chrPos.Z), Vector3.new(tPos.X, chrPos.Y, tPos.Z)))
+  end
+end
+
+local function addHitBox(obj, size)
+  pcall(function()
+    local part = Instance.new("Part")
+    cs:AddTag(part, "RayIgnore")
+    part.Size = Vector3.new(size, size, size)
+    part.CFrame = obj.PrimaryPart and obj.PrimaryPart.CFrame or obj.CFrame
+    part.Name = "enemyRadius"
+    part.Anchored = false
+    part.CanCollide = false
+    part.Transparency = 1
+    part.Parent = obj
+    local weld = Instance.new("WeldConstraint")
+    weld.Part1 = obj.PrimaryPart or obj
+    weld.Part0 = part
+    weld.Parent = obj
+  end)
+end
+
+local function _initHitBox(instance)
+  if instance:IsA("Model") then
+    task.spawn(function()
+      local hrp = instance:WaitForChild("HumanoidRootPart", 5)
+      local hum = instance:WaitForChild("Humanoid", 5)
+      if hrp and hum then
+        cs:AddTag(instance, "Enemy")
+        if _G.doInstakill and instakillTable[instance.Name] then
+          hum.Health = 0
+        end
+        addHitBox(instance, 7)
+      end
+    end)
+  end
+end
+
+local function initHitBox()
+  warn("[Dungeon Quest Reborn] Initializing Enemy Hitboxes...")
+  if workspace:FindFirstChild("enemies") then
+    workspace.enemies.ChildAdded:Connect(_initHitBox)
+    for _, inst in pairs(workspace.enemies:GetChildren()) do
+      _initHitBox(inst)
+    end
+  end
+  if workspace:FindFirstChild("dungeon") then
+    for _, room in pairs(workspace.dungeon:GetChildren()) do
+      local efold = room:FindFirstChild("enemyFolder")
+      if efold then
+        efold.ChildAdded:Connect(_initHitBox)
+        for _, inst in pairs(efold:GetChildren()) do
+          _initHitBox(inst)
+        end
+      end
+    end
+    workspace.dungeon.ChildAdded:Connect(function(room)
+      local efold = room:WaitForChild("enemyFolder", 5)
+      if efold then
+        efold.ChildAdded:Connect(_initHitBox)
+        for _, inst in pairs(efold:GetChildren()) do
+          _initHitBox(inst)
+        end
+      end
+    end)
+  end
+end
+
+initHitBox() -- << เรียกใช้งานทันทีในดันเจี้ยน
+
+local function findCloseEnemy()
+  local bestMob = nil
+  local bestDist = math.huge
+  local _, _, _, root = getPlayer()
+  if not root then return nil end
+
+  local prio = cs:GetTagged("Prio-Enemy")
+  if #prio > 0 then return prio[1] end
+
+  local enemies = cs:GetTagged("Enemy")
+  for _, mob in pairs(enemies) do
+    if mob and mob.Parent and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
+      local dst = getMag(root.Position, mob.HumanoidRootPart.Position)
+      if dst < bestDist then
+        bestMob = mob
+        bestDist = dst
+      end
+    end
+  end
+  return bestMob
+end
+
+local function followPath(targetPos)
+  local _, chara, hum, root = getPlayer()
+  if not hum or not root then return end
+  hum:MoveTo(targetPos)
+end
+
+local function decide()
+  enemy = findCloseEnemy()
+  local _, chara, hum, root = getPlayer()
+  if not root then return "nothing" end
+
+  if enemy and enemy:FindFirstChild("HumanoidRootPart") then
+    local dist = getMag(root.Position, enemy.HumanoidRootPart.Position)
+    if dist > 6 then
+      return "chase"
+    else
+      return "strafe"
+    end
+  end
+  return "wait"
+end
+
+local function mainLoop()
+  task.spawn(function()
+    while not gameOver do
+      local _, chara, hum, root = getPlayer()
+      if root and hum and hum.Health > 0 then
+        hum.WalkSpeed = walkspeed
+        local thought = decide()
+        if thought == "chase" and enemy and enemy:FindFirstChild("HumanoidRootPart") then
+          followPath(enemy.HumanoidRootPart.Position)
+          charLookAt(chara, enemy.HumanoidRootPart)
+        elseif thought == "strafe" and enemy and enemy:FindFirstChild("HumanoidRootPart") then
+          charLookAt(chara, enemy.HumanoidRootPart)
+        end
+      end
+      if _G.extremelyFast then
+        RunService.RenderStepped:Wait()
+      else
+        task.wait(0.1)
+      end
+    end
+  end)
+end
+
+mainLoop()
+
+-- ระบบใช้สกิลและโจมตี
+if _G.auto_attack then
+  task.spawn(function()
+    while not gameOver do
+      local _, chara = getPlayer()
+      if enemy and enemy:FindFirstChild("HumanoidRootPart") and chara and chara:FindFirstChild("HumanoidRootPart") then
+        local dist = getMag(enemy.HumanoidRootPart.Position, chara.HumanoidRootPart.Position)
+        if dist <= abilityRange then
+          -- ใช้ Ability
+          if LocalPlayer:FindFirstChild("Backpack") then
+            for _, v in pairs(LocalPlayer.Backpack:GetChildren()) do
+              local rem = v:FindFirstChildOfClass("RemoteEvent")
+              if rem and v:FindFirstChild("cooldown") and v.cooldown.Value <= 0 then
+                rem:FireServer()
+              end
+            end
+          end
+          -- ฟันดาบ / โจมตีปกติ
+          for _, v in pairs(chara:GetChildren()) do
+            if v:IsA("Accessory") and v:FindFirstChild("swing") then
+              v.swing:FireServer()
+            end
+          end
+        end
+      end
+      task.wait(0.1)
+    end
+  end)
+end
+
+-- เมื่อโดนเตะ วาร์ปกลับล็อบบี้ของ Reborn
+game:GetService("LogService").MessageOut:Connect(function(Message)
+  if string.find(Message, "Server Kick Message:") then
+    TeleportService:Teleport(77649408247578)
+  end
+end)
